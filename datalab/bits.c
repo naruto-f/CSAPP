@@ -143,7 +143,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return 2;
+  return ~(~(~x & y) & ~(~y & x));
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -152,9 +152,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-
-  return 2;
-
+  return 0x1 << 31;
 }
 //2
 /*
@@ -165,7 +163,8 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  return 2;
+  //需要使用!!(x+1)来排除特例0xFFFFFFFF
+  return !(~(x ^ (x + 1))) & !!(x + 1);
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -176,7 +175,11 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  return 2;
+  int target = 0xAA;
+  target = (target << 8) | 0xAA;
+  target = (target << 8) | 0xAA;
+  target = (target << 8) | 0xAA;
+  return !((target & x) ^ target);
 }
 /* 
  * negate - return -x 
@@ -186,7 +189,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return (~x) + 1;
 }
 //3
 /* 
@@ -199,7 +202,12 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  int high_legal = !((x >> 4) ^ 0x3);
+  int low_bits = x & 0xF;
+  int neg_A = ~0xA + 1;
+  int neg_compare = 1 << 31;   //这个对比的值不是固定的，因为合法的low_bits - 10之后的负数的二进制表示中绝大多数高位都是1，所以只要设置为一个高位有1的值即可。
+  int low_legal = !!((low_bits + neg_A) & neg_compare);
+  return high_legal & low_legal;
 }
 /* 
  * conditional - same as x ? y : z 
@@ -209,7 +217,8 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  int mask = ~!x + 1;  // ①x!=0时 mask=0x0  ②x==0时 mask=0xffffffff.  注意0xffffffff + 1 = 0x0
+  return ((~mask) & y) | (mask & z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -219,7 +228,13 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  int sign_x = x >> 31;
+  int sign_y = y >> 31;
+
+  int sign_equal = !(sign_x ^ sign_y);
+  int y_equal_or_large = sign_equal & ((~y + x) >> 31); // 当~y + x 为正时说明x>y，为负时说明x<=y
+  int y_sign_pos = sign_x & !sign_y;
+  return y_equal_or_large | y_sign_pos;
 }
 //4
 /* 
@@ -231,7 +246,9 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return 2;
+  //将x和-x相| 来区分负数和0，当x为0时(x | neg_x) >> 31为0，x为正和负时由于是算数右移所以会补充符号位得到(x | neg_x) >> 31为0xFFFFFFFF, 解释为int时为-1.
+  int neg_x = ~x + 1;
+  return ((x | neg_x) >> 31) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -246,7 +263,22 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+  //本题就是要找到从右向左，最左边的1在第几位然后加上一位符号位即可
+  int flag, b16, b8, b4, b2, b1, b0;
+  flag = x >> 31;
+  x = (flag & ~x) | (~flag & x);  //负数就按位取反，正数就不变
+  b16 = !!(x >> 16) << 4;         //当高16位不全为0则只需要关注高16位并向右位移16位，当高16位全为0则需要关注低16位且不需要移位.
+  x >>= b16;
+  b8 = !!(x >> 8) << 3;
+  x >>= b8;
+  b4 = !!(x >> 4) << 2;
+  x >>= b4;
+  b2 = !!(x >> 2) << 1;
+  x >>= b2;
+  b1 = !!(x >> 1);
+  x >>= b1;
+  b0 = x;
+  return b16 + b8 + b4 + b2 + b1 + b0 + 1;  //无论正数负数都需要用一个符号位表示正负
 }
 //float
 /* 
@@ -261,7 +293,24 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  unsigned exp = (uf & 0x7f800000) >> 23;
+  unsigned sign=uf >> 31;
+  unsigned frac=uf & 0x7FFFFF;
+  unsigned res;
+  if (exp == 0xFF) {
+      //无穷大等不能表示的数
+      return uf;
+  } else if (exp == 0x0) {
+      //此解释存疑：非规范化数，非常小，接近0，所以可以将尾数直接乘2也不会超过1.0
+      frac <<= 1;
+      res = sign << 31 | exp << 23 | frac;
+  } else {
+      //规范化数
+      ++exp;
+      res = sign << 31 | exp << 23 | frac;
+  }
+
+  return res;
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -276,7 +325,31 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  unsigned exp = (uf & 0x7f800000) >> 23;
+  unsigned sign= uf >> 31;
+  unsigned frac= uf & 0x7FFFFF;
+  int E = exp - 127;
+
+  if (E < 0) {
+      //如果是e小于0，则直接返回0
+      return 0;
+  } else if (exp == 0xFF || E > 30) {
+      //如果是NaN或int类型表示不了，那么返回0x80000000u
+      return 0x80000000u;
+  } else {
+      frac = (1 << 23) | frac;
+      if (E > 23) {
+          frac <<= (E - 23);
+      } else {
+          frac >>= (23 - E);
+      }
+  }
+
+  if (sign) {
+      frac = -frac;
+  }
+
+  return frac;
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -292,5 +365,21 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+  //    x>127 返回+NAN
+  //    x<-148太小返回0
+  //    x>=-126规格化数
+  //    否则就是非规格化数
+  if (x > 127) {
+      return 0xFF << 23;
+  } else if (x < -148) {
+       return 0;
+  } else if (x >= -126) {
+      //规格化数
+      int exp = x + 127;
+      return exp << 23;
+  } else {
+      //非规格化数
+      int t = 149 + x + 1;
+      return 1 << t;
+  }
 }
