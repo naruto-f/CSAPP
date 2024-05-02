@@ -262,6 +262,7 @@ static void *extend_mem_for_free_list(int free_list_index, int newsize) {
         block_num = 0;
     }
 
+    // TODO(优化点3): 能不能将大块的空间占用设置为仅存在适当数量的内部碎片，但是目前有bug需要排查
 //    if (newsize > extend_size) {
 //        extend_size = newsize;
 //        block_size = extend_size;
@@ -401,7 +402,7 @@ static void *coalesce(void *ptr) {
     }
 
     if (prev_alloc && next_alloc) {
-        return ptr;
+        return NULL;
     } else if (prev_alloc && !next_alloc) {
         size += GET_SIZE(NEXT_BLKP(ptr));
         delete_block_for_coalesce(NEXT_BLKP(ptr));
@@ -435,7 +436,10 @@ void mm_free(void *ptr)
 
     size_t block_size = GET_SIZE(BLOCK_START_PTR(ptr));
     insert_block_to_fitting_free_list(BLOCK_START_PTR(ptr), block_size);
-    coalesce(BLOCK_START_PTR(ptr));
+    // TODO(优化点1): 多次重复聚合空闲块，但是目前有bug需要排查
+    while ((ptr = coalesce(BLOCK_START_PTR(ptr))) != NULL) {
+
+    }
 }
 
 /*
@@ -459,6 +463,7 @@ void *mm_realloc(void *ptr, size_t size)
     size_t copySize = 0;
 
     if (block_size >= new_block_size) {
+        // TODO(优化点2): 将多余的空间划分为一个空闲块，但是目前有bug需要排查
 //        if (block_size - new_block_size > 16) {
 //            PUT(BLOCK_START_PTR(ptr), new_block_size);
 //            insert_block_to_fitting_free_list((char *)oldptr + new_block_size, block_size - new_block_size);
